@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import imutils
 
 def IOU(box1, box2):
     x1, y1, w1, h1 = box1
@@ -22,28 +23,51 @@ thickness = 1
 color = (0, 0, 255) 
 org = (480, 220) 
 
+# Read the template 
+template = cv2.imread('./image/template/sample1.jpg')
+template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) 
+template = cv2.Canny(template, 50, 200)
+   
+# Store width and height of template in w and h 
+(tH, tW) = template.shape[:2]
+
+  
+
 while True:
     _, frame = cap.read()
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    img_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     cv2.rectangle(frame, (box_check[0], box_check[1]), (box_check[0] + box_check[2], box_check[1] + box_check[3]), (255, 0, 0), 3)
-    
-    location = ''
-    for i in range(10):
-        template = cv2.imread("./image/template/" + str(i) + ".jpg", cv2.IMREAD_GRAYSCALE)
-        w, h = template.shape[::-1]
-        result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
-        loc = np.where(result >= 0.6)
-        if len(loc[0]) != 0:
-            location = zip(*loc[::-1])
+
+    found = None
+    for scale in np.linspace(0.3, 1, 3)[::-1]: 
+        # resize the image according to the scale, and keep track 
+        # of the ratio of the resizing 
+        resized = imutils.resize(img_gray, width = int(img_gray.shape[1] * scale)) 
+        r = img_gray.shape[1] / float(resized.shape[1]) 
+
+        if resized.shape[0] < tH or resized.shape[1] < tW: 
             break
+    
+        # if the resized image is smaller than the template, then break 
+        # from the loop 
+        # detect edges in the resized, grayscale image and apply template  
+        # matching to find the template in the image 
+        edged  = cv2.Canny(resized, 50, 200) 
+        result = cv2.matchTemplate(edged, template, cv2.TM_CCOEFF) 
+        (_, maxVal, _, maxLoc) = cv2.minMaxLoc(result) 
+        # if we have found a new maximum correlation value, then update 
+        # the found variable if found is None or maxVal > found[0]: 
+        found = (maxVal, maxLoc, r) 
 
+    (_, maxLoc, r) = found
+    (startX, startY) = (int(maxLoc[0] * r), int(maxLoc[1] * r)) 
+    (endX, endY) = (int((maxLoc[0] + tW) * r), int((maxLoc[1] + tH) * r)) 
+    
+    box_object = (startX, startY, endX - startX, endY -startY)
+    # draw a bounding box around the detected result and display the image 
+    cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 0, 255), 2) 
 
-    if location != '':
-        pt = max(location)
-        box_object = (pt[0], pt[1], w, h)
-        print(box_object)
-        cv2.rectangle(frame, pt, (pt[0] + w, pt[1] + h), (0, 255, 0), 3)
-
+   
     if box_object != '':
         if(IOU(box_object, box_check) > 0.3):
             cv2.putText(frame, 'Calculate Detected', org, font, fontScale, color, thickness, cv2.LINE_AA) 
